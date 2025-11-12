@@ -157,7 +157,6 @@ def main():
 
     print(f"\n5) With probability {successful / totalExp} there will be at least one series of 5 heads in the given number of experiments\n")
 
-    print(f"6) The coin is not symmetrical. Graphics for points 1,4,5 according to the given conditions\n")
     setGraphics()
 
 if __name__ == "__main__":
