@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "8Il2VRmNGug=",
+  "success": true,
+  "projectFilePath": "D:\\projects\\Prisoner'sDilemma\\Prisoner'sDilemma\\Prisoner'sDilemma.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\HUAWEI\\.nuget\\packages\\consoletables\\2.7.0\\consoletables.2.7.0.nupkg.sha512",
+    "C:\\Users\\HUAWEI\\.nuget\\packages\\wcwidth\\1.0.0\\wcwidth.1.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,47 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\projects\\Prisoner\u0027sDilemma\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{58E373CE-757D-4123-9DA9-1D4058E12F17}|Prisoner\u0027sDilemma\\Prisoner\u0027sDilemma.csproj|d:\\projects\\prisoner\u0027sdilemma\\prisoner\u0027sdilemma\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{58E373CE-757D-4123-9DA9-1D4058E12F17}|Prisoner\u0027sDilemma\\Prisoner\u0027sDilemma.csproj|solutionrelative:prisoner\u0027sdilemma\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 1,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedHeight": 357,
+          "SelectedChildIndex": -1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            }
+          ]
+        },
+        {
+          "DockedHeight": 18,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\projects\\Prisoner\u0027sDilemma\\Prisoner\u0027sDilemma\\Program.cs",
+              "RelativeDocumentMoniker": "Prisoner\u0027sDilemma\\Program.cs",
+              "ToolTip": "D:\\projects\\Prisoner\u0027sDilemma\\Prisoner\u0027sDilemma\\Program.cs",
+              "RelativeToolTip": "Prisoner\u0027sDilemma\\Program.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAKQAAAAJAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-10-28T08:43:19.205Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
