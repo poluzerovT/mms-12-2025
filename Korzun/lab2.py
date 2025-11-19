@@ -115,5 +115,3 @@ def print_tables(names, total_scores, max_dom_runs):
 if __name__ == "__main__":
     names, total_scores, max_dom_runs = run_tournament()
     print_tables(names, total_scores, max_dom_runs)
-
-
