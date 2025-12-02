@@ -1,223 +1,291 @@
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
-from typing import Callable, Iterable, Sequence, Tuple
+from pathlib import Path
+from typing import Callable, Dict, List, Sequence, Tuple
 
-import matplotlib.pyplot as plt
+import math
+
 import numpy as np
 
+import matplotlib
 
-Number = float | int
-
-
-@dataclass
-class SimulationConfig:
-    steps: int = 400
-    discard: int = 100
-    tolerance: float = 1e-4
+matplotlib.use("Agg")  # гарантируем работу без GUI
+import matplotlib.pyplot as plt
 
 
-@dataclass
+ScalarMap = Callable[[float], float]
+
+
+@dataclass(frozen=True)
 class HostParasiteParams:
-    growth_rate: float = 2.5  # b
-    attack_rate: float = 0.8  # a
-    conversion_rate: float = 1.2  # c
-
-    def as_tuple(self) -> Tuple[float, float, float]:
-        return self.growth_rate, self.attack_rate, self.conversion_rate
+    a: float
+    b: float
+    c: float
 
 
-def iterate_map(
-    map_fn: Callable[[float], float],
-    x0: float,
-    steps: int,
-) -> np.ndarray:
-    values = np.empty(steps, dtype=float)
+def logistic_rule(r: float) -> ScalarMap:
+    return lambda x: r * x * (1.0 - x)
+
+
+def moran_rule(r: float) -> ScalarMap:
+    return lambda x: x * math.exp(r * (1.0 - x))
+
+
+def iterate_scalar_map(rule: ScalarMap, x0: float, steps: int) -> np.ndarray:
+    values = np.empty(steps + 1)
     values[0] = x0
-    for i in range(1, steps):
-        values[i] = map_fn(values[i - 1])
+    for i in range(steps):
+        values[i + 1] = rule(values[i])
     return values
 
 
-def exponential_model(r: float, x0: float, config: SimulationConfig) -> np.ndarray:
-    return iterate_map(lambda x: r * x, x0, config.steps)
+def iterate_host_parasite(params: HostParasiteParams, x0: float, y0: float, steps: int) -> np.ndarray:
+    values = np.empty((steps + 1, 2))
+    values[0, 0] = x0
+    values[0, 1] = y0
+    for i in range(steps):
+        x_t, y_t = values[i]
+        survival = math.exp(-params.a * y_t)
+        x_next = params.b * x_t * survival
+        y_next = params.c * x_t * (1.0 - survival)
+        values[i + 1, 0] = x_next
+        values[i + 1, 1] = y_next
+    return values
 
 
-def logistic_model(r: float, x0: float, config: SimulationConfig) -> np.ndarray:
-    return iterate_map(lambda x: r * x * (1.0 - x), x0, config.steps)
+def _regime_from_tail(tail: np.ndarray, tolerance: float = 1e-3, max_cycle: int = 16) -> str:
+    if tail.size == 0:
+        return "недостаточно данных"
+    if not np.all(np.isfinite(tail)):
+        return "расходимость"
+    if np.max(np.abs(tail)) > 1e6:
+        return "расходимость"
+    diffs = np.diff(tail)
+    if diffs.size == 0 or (np.max(diffs) < tolerance and np.min(diffs) > -tolerance):
+        return "устойчивое равновесие"
+
+    unique: List[float] = []
+    for value in tail[-100:]:
+        if not any(abs(value - u) < tolerance for u in unique):
+            unique.append(value)
+        if len(unique) > max_cycle:
+            return "хаотическое поведение"
+    return f"{len(unique)}-цикл"
 
 
-def moran_model(r: float, x0: float, config: SimulationConfig) -> np.ndarray:
-    return iterate_map(lambda x: x * np.exp(r * (1.0 - x)), x0, config.steps)
+def explore_logistic(r_values: Sequence[float], x0_values: Sequence[float], steps: int = 1500, burn_in: int = 500):
+    records = []
+    for r in r_values:
+        rule = logistic_rule(r)
+        for x0 in x0_values:
+            seq = iterate_scalar_map(rule, x0, steps)
+            tail = seq[burn_in:]
+            regime = _regime_from_tail(tail)
+            records.append(
+                {
+                    "model": "logistic",
+                    "r": r,
+                    "x0": x0,
+                    "regime": regime,
+                    "tail_mean": float(np.mean(tail[-100:])),
+                    "tail_std": float(np.std(tail[-100:])),
+                }
+            )
+    return records
 
 
-def nicholson_bailey_model(
-    params: HostParasiteParams,
-    x0: float,
-    y0: float,
-    config: SimulationConfig,
-) -> Tuple[np.ndarray, np.ndarray]:
-    b, a, c = params.as_tuple()
-    hosts = np.empty(config.steps, dtype=float)
-    parasites = np.empty(config.steps, dtype=float)
-    hosts[0], parasites[0] = x0, y0
-
-    for i in range(1, config.steps):
-        hosts[i] = b * hosts[i - 1] * np.exp(-a * parasites[i - 1])
-        infections = 1.0 - np.exp(-a * parasites[i - 1])
-        parasites[i] = c * hosts[i - 1] * infections
-    return hosts, parasites
-
-
-def detect_attractor(
-    sequence: Sequence[float],
-    config: SimulationConfig,
-) -> str:
-    tail = np.array(sequence[-config.discard :])
-    if np.any(np.isnan(tail)) or np.any(tail < 0) or np.any(~np.isfinite(tail)):
-        return "нестабильно"
-
-    rounded = np.round(tail, 3)
-    unique = np.unique(rounded)
-
-    if unique.size == 1:
-        return "устойчиво"
-    if unique.size <= 8:
-        return f"период {unique.size}"
-    return "хаос"
+def explore_moran(r_values: Sequence[float], x0_values: Sequence[float], steps: int = 600, burn_in: int = 200):
+    records = []
+    for r in r_values:
+        rule = moran_rule(r)
+        for x0 in x0_values:
+            seq = iterate_scalar_map(rule, x0, steps)
+            tail = seq[burn_in:]
+            regime = _regime_from_tail(tail, tolerance=5e-3)
+            records.append(
+                {
+                    "model": "moran",
+                    "r": r,
+                    "x0": x0,
+                    "regime": regime,
+                    "tail_mean": float(np.mean(tail[-100:])),
+                    "tail_std": float(np.std(tail[-100:])),
+                }
+            )
+    return records
 
 
-def scan_parameter_space(
-    generator: Callable[[float], np.ndarray],
-    param_values: Iterable[float],
-    config: SimulationConfig,
-) -> list[tuple[float, str]]:
-    summary = []
-    for value in param_values:
-        data = generator(value)
-        state = detect_attractor(data, config)
-        summary.append((value, state))
-    return summary
+def explore_host_parasite(
+    params_list: Sequence[HostParasiteParams],
+    initials: Sequence[Tuple[float, float]],
+    steps: int = 200,
+    burn_in: int = 50,
+):
+    records = []
+    for params in params_list:
+        for x0, y0 in initials:
+            seq = iterate_host_parasite(params, x0, y0, steps)
+            tail = seq[burn_in:]
+            host_tail = tail[:, 0]
+            parasite_tail = tail[:, 1]
+            host_span = float(np.max(host_tail) - np.min(host_tail))
+            parasite_span = float(np.max(parasite_tail) - np.min(parasite_tail))
+            diverging = (not np.all(np.isfinite(seq))) or float(np.max(np.abs(seq))) > 1e6
+            if diverging:
+                regime = "неограниченный рост"
+                host_mean = float("inf") if np.max(host_tail) > 1e6 else float(np.mean(host_tail[-50:]))
+                parasite_mean = float("inf") if np.max(parasite_tail) > 1e6 else float(np.mean(parasite_tail[-50:]))
+            elif host_span < 1e-3 and parasite_span < 1e-3:
+                regime = "равновесие"
+                host_mean = float(np.mean(host_tail[-50:]))
+                parasite_mean = float(np.mean(parasite_tail[-50:]))
+            else:
+                regime = "устойчивые колебания"
+                host_mean = float(np.mean(host_tail[-50:]))
+                parasite_mean = float(np.mean(parasite_tail[-50:]))
+            records.append(
+                {
+                    "model": "host-parasite",
+                    "params": params,
+                    "x0": x0,
+                    "y0": y0,
+                    "regime": regime,
+                    "host_mean": host_mean,
+                    "parasite_mean": parasite_mean,
+                }
+            )
+    return records
 
 
-def plot_time_series(ax: plt.Axes, data: np.ndarray, title: str, color: str) -> None:
-    ax.plot(data, color=color, linewidth=1.5)
-    ax.set_title(title)
+def _group_by_parameter(records: List[Dict], key: str) -> Dict[float, List[Dict]]:
+    grouped: Dict[float, List[Dict]] = {}
+    for record in records:
+        grouped.setdefault(record[key], []).append(record)
+    return grouped
+
+
+def print_scalar_summary(records: List[Dict], title: str) -> None:
+    print(f"\n{title}")
+    grouped = _group_by_parameter(records, "r")
+    for r_value, group in grouped.items():
+        regimes = {entry["regime"] for entry in group}
+        means = np.mean([entry["tail_mean"] for entry in group])
+        stds = np.mean([entry["tail_std"] for entry in group])
+        print(f"  r = {r_value:.3f}: режимы {', '.join(regimes)} | ⟨x⟩ ≈ {means:.3f}, σ ≈ {stds:.3f}")
+
+
+def print_host_parasite_summary(records: List[Dict]) -> None:
+    print("\nМодель хозяин–паразит (Николсон–Бейли)")
+    for record in records:
+        p = record["params"]
+        print(
+            "  "
+            f"a={p.a:.2f}, b={p.b:.2f}, c={p.c:.2f}, x0={record['x0']:.2f}, y0={record['y0']:.2f} -> "
+            f"{record['regime']} (⟨x⟩≈{record['host_mean']:.3f}, ⟨y⟩≈{record['parasite_mean']:.3f})"
+        )
+
+
+def find_logistic_bifurcations(
+    r_start: float = 2.5,
+    r_end: float = 4.0,
+    samples: int = 150,
+    x0: float = 0.2,
+    steps: int = 2000,
+    burn_in: int = 800,
+) -> List[Tuple[float, str, str]]:
+    r_values = np.linspace(r_start, r_end, samples)
+    last_regime = None
+    transitions: List[Tuple[float, str, str]] = []
+    for r in r_values:
+        regime = _regime_from_tail(
+            iterate_scalar_map(logistic_rule(r), x0, steps)[burn_in:], tolerance=5e-4
+        )
+        if last_regime is not None and regime != last_regime:
+            if not transitions or r - transitions[-1][0] > 0.01:
+                transitions.append((float(r), last_regime, regime))
+        last_regime = regime
+    return transitions
+
+
+def plot_population_examples(output_path: Path) -> None:
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+    # Схожие траектории: логистическая модель с r=2.5, разные x0
+    ax = axes[0, 0]
+    r_similar = 2.5
+    for x0 in (0.1, 0.9):
+        seq = iterate_scalar_map(logistic_rule(r_similar), x0, 60)
+        ax.plot(seq, label=f"x0={x0}")
+    ax.set_title("Логистическая: схожая динамика (r=2.5)")
     ax.set_xlabel("t")
     ax.set_ylabel("x_t")
-    ax.grid(alpha=0.2)
+    ax.legend()
 
+    # Существенно разное поведение: логистическая с r=3.5 и 3.9
+    ax = axes[0, 1]
+    for r in (3.5, 3.9):
+        seq = iterate_scalar_map(logistic_rule(r), 0.2, 160)
+        ax.plot(seq, label=f"r={r}")
+    ax.set_title("Логистическая: различная динамика")
+    ax.set_xlabel("t")
+    ax.set_ylabel("x_t")
+    ax.legend()
 
-def visualize_core_models(config: SimulationConfig) -> None:
-    x0 = 0.2
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    plot_time_series(
-        axes[0],
-        exponential_model(r=1.05, x0=x0, config=config),
-        "Экспоненциальный рост (r=1.05)",
-        "tab:green",
-    )
-    plot_time_series(
-        axes[1],
-        logistic_model(r=3.3, x0=x0, config=config),
-        "Логистическая модель (r=3.3)",
-        "tab:blue",
-    )
-    plot_time_series(
-        axes[2],
-        moran_model(r=2.5, x0=x0, config=config),
-        "Модель Морана (r=2.5)",
-        "tab:orange",
-    )
-    fig.suptitle("Сравнение базовых моделей роста")
+    # Модель Морана: сравнение режимов
+    ax = axes[1, 0]
+    for r in (0.8, 2.0):
+        seq = iterate_scalar_map(moran_rule(r), 0.3, 80)
+        ax.plot(seq, label=f"r={r}")
+    ax.set_title("Модель Морана")
+    ax.set_xlabel("t")
+    ax.set_ylabel("x_t")
+    ax.legend()
+
+    # Хозяин–паразит: отображаем обе популяции
+    ax = axes[1, 1]
+    params = HostParasiteParams(a=0.5, b=2.5, c=1.1)
+    seq = iterate_host_parasite(params, x0=0.8, y0=0.2, steps=80)
+    ax.plot(seq[:, 0], label="x_t (хозяева)")
+    ax.plot(seq[:, 1], label="y_t (паразиты)")
+    ax.set_title("Николсон–Бейли: колебания")
+    ax.set_xlabel("t")
+    ax.set_ylabel("численность")
+    ax.legend()
+
     fig.tight_layout()
-
-
-def visualize_host_parasite(config: SimulationConfig) -> None:
-    params = HostParasiteParams()
-    hosts, parasites = nicholson_bailey_model(params, 0.6, 0.2, config)
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
-    axes[0].plot(hosts, label="хозяева", color="tab:blue")
-    axes[0].plot(parasites, label="паразиты", color="tab:red")
-    axes[0].set_title("Численности во времени")
-    axes[0].legend()
-    axes[0].set_xlabel("t")
-    axes[0].set_ylabel("Популяция")
-    axes[0].grid(alpha=0.2)
-
-    axes[1].plot(hosts, parasites, color="tab:purple", linewidth=1.2)
-    axes[1].set_title("Фазовый портрет (x_t, y_t)")
-    axes[1].set_xlabel("хозяева")
-    axes[1].set_ylabel("паразиты")
-    axes[1].grid(alpha=0.2)
-
-    fig.suptitle("Модель Никольсона–Бейли")
-    fig.tight_layout()
-
-
-def visualize_logistic_transitions(config: SimulationConfig) -> None:
-    r_values = np.linspace(2.4, 4.0, 80)
-    summary = scan_parameter_space(
-        lambda r: logistic_model(r=r, x0=0.2, config=config),
-        r_values,
-        config,
-    )
-    labels = {"устойчиво": 0, "хаос": 2}
-    y = [labels.get(state, 1) for _, state in summary]
-
-    fig, ax = plt.subplots(figsize=(10, 3))
-    cmap = {0: "tab:green", 1: "tab:orange", 2: "tab:red"}
-    colors = [cmap[val] for val in y]
-    ax.scatter(r_values, y, c=colors, s=30)
-    ax.set_title("Изменение поведения логистической модели при росте r")
-    ax.set_xlabel("r")
-    ax.set_yticks([0, 1, 2], ["устойчиво", "период", "хаос"])
-    ax.grid(alpha=0.2)
-    fig.tight_layout()
-
-    text_rows = "\n".join(f"r={r:.2f}: {state}" for r, state in summary[::10])
-    print("Примеры состояний логистической модели:\n", text_rows)
-
-
-def run_all(config: SimulationConfig, show: bool = True) -> None:
-    visualize_core_models(config)
-    visualize_host_parasite(config)
-    visualize_logistic_transitions(config)
-    if show:
-        plt.show()
-
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Лабораторная работа №4: исследование моделей роста популяций."
-    )
-    parser.add_argument(
-        "--steps",
-        type=int,
-        default=400,
-        help="число итераций во временном ряде (default: 400)",
-    )
-    parser.add_argument(
-        "--discard",
-        type=int,
-        default=100,
-        help="длина хвоста для анализа устойчивости (default: 100)",
-    )
-    parser.add_argument(
-        "--no-show",
-        action="store_true",
-        help="не вскрывать окна matplotlib (полезно при тестах)",
-    )
-    return parser
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
 
 
 def main() -> None:
-    parser = build_arg_parser()
-    args = parser.parse_args()
-    config = SimulationConfig(steps=args.steps, discard=args.discard)
-    run_all(config, show=not args.no_show)
+    logistic_rs = np.linspace(2.5, 3.8, 6)
+    logistic_x0 = [0.05, 0.2, 0.6, 0.9]
+    logistic_records = explore_logistic(logistic_rs, logistic_x0)
+    print_scalar_summary(logistic_records, "Логистическая модель")
+
+    moran_rs = [0.5, 1.0, 1.5, 2.5]
+    moran_x0 = [0.1, 0.4, 0.9]
+    moran_records = explore_moran(moran_rs, moran_x0)
+    print_scalar_summary(moran_records, "Модель Морана")
+
+    params_list = [
+        HostParasiteParams(a=0.3, b=1.8, c=0.9),
+        HostParasiteParams(a=0.5, b=2.5, c=1.1),
+        HostParasiteParams(a=0.7, b=3.0, c=1.2),
+    ]
+    initials = [(0.5, 0.2), (0.9, 0.4)]
+    host_records = explore_host_parasite(params_list, initials)
+    print_host_parasite_summary(host_records)
+
+    bifurcations = find_logistic_bifurcations()
+    print("\nПороговые значения r (логистическая модель):")
+    for r, src, dst in bifurcations:
+        print(f"  r ≈ {r:.3f}: {src} → {dst}")
+
+    plot_path = Path(__file__).with_name("lab4_trajectории.png")
+    plot_population_examples(plot_path)
+    print(f"\nГрафики сохранены в {plot_path.resolve()}")
 
 
 if __name__ == "__main__":
