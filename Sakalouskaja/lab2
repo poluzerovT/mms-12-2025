@@ -1,0 +1,97 @@
+W = [[3, 0],
+     [5, 1]]
+ROUNDS = 200
+
+def Alex(a_hist, b_hist): 
+    return 1
+def Bob(a_hist, b_hist): 
+    return 0
+def Clara(a_hist, b_hist): 
+    if not b_hist:
+        return 0  
+    else:
+        return b_hist[-1]
+def Denis(a_hist, b_hist):
+    if not b_hist:
+        return 0  
+    else:
+        return 1 - b_hist[-1]
+def Emma(a_hist, b_hist):
+    if (len(a_hist) + 1) % 20 == 0:
+        return 1  
+    else:
+        return 0
+def Frida(a_hist, b_hist):
+    if any(b_hist):
+        return 1  
+    else:
+        return 0
+def George(a_hist, b_hist):
+    # предаёт если доля предателств соперника >= 40%
+    if len(b_hist) != 0 and sum(b_hist) / len(b_hist) >= 0.4:
+        return 1
+    else:
+        return 0
+
+strategies = {
+    "Alex": Alex,
+    "Bob": Bob,
+    "Clara": Clara,
+    "Denis": Denis,
+    "Emma": Emma,
+    "Frida": Frida,
+    "George": George
+}
+
+
+def play(a, b, rounds=ROUNDS):
+    a_hist, b_hist = [], []
+    a_score = b_score = 0
+    longest_dom_a = longest_dom_b = 0
+    cur_dom_a = cur_dom_b = 0
+
+    for _ in range(rounds):
+        move_a = a(a_hist, b_hist)
+        move_b = b(b_hist, a_hist)
+        move_a = int(move_a) if move_a in (0, 1) else 0
+        move_b = int(move_b) if move_b in (0, 1) else 0
+        a_hist.append(move_a)
+        b_hist.append(move_b)
+
+        a_r = W[move_a][move_b]
+        b_r = W[move_b][move_a]
+        a_score += a_r
+        b_score += b_r
+
+        if a_r == 5 and b_r == 0:
+            cur_dom_a += 1
+            cur_dom_b = 0
+        elif b_r == 5 and a_r == 0:
+            cur_dom_b += 1
+            cur_dom_a = 0
+        else:
+            cur_dom_a = cur_dom_b = 0
+
+        longest_dom_a = max(longest_dom_a, cur_dom_a)
+        longest_dom_b = max(longest_dom_b, cur_dom_b)
+
+    return a_score, b_score, longest_dom_a, longest_dom_b
+
+names = list(strategies.keys())
+results = {name: 0 for name in names}
+dominance = {name: 0 for name in names}
+
+for A in names:
+    for B in names:
+        sA, sB, dA, dB = play(strategies[A], strategies[B])
+        results[A] += sA
+
+        dominance[A] = max(dominance[A], dA)
+
+print("Суммарные очки каждой стратегии против всех:")
+for name in sorted(results.keys()):
+    print(f"{name}: {results[name]}")
+
+print("\nДлина наибольшей доминирующей серии и пример серий:")
+for name in sorted(dominance.keys()):
+    print(f"{name}: {dominance[name]}")
