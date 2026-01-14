@@ -25,7 +25,6 @@ def Emma_strategy(last_opponent, part_count, first_game):
         return 1
     return 0
 
-
 def Frida_strategy(last_opponent, part_count, first_game):
     if not hasattr(Frida_strategy, 'decis'):
         Frida_strategy.decis = 0
@@ -39,8 +38,7 @@ def Frida_strategy(last_opponent, part_count, first_game):
     return Frida_strategy.decis
 
 def George_strategy(last_opponent, part_count, first_game):
-    if not hasattr(George_strategy, 'betrayal_count'):
-        George_strategy.betrayal_count = 0
+
 
     if first_game:
         George_strategy.betrayal_count = 0
@@ -56,7 +54,6 @@ def George_strategy(last_opponent, part_count, first_game):
 
 W = ((3, 0),
      (5, 1))
-
 
 participants = {
     "Alex": Alex_strategy,
